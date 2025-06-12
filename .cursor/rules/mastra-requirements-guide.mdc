@@ -1,0 +1,684 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Mastraフレームワーク開発要件定義ガイド
+
+## 📖 概要
+
+このガイドは、mastraフレームワークを使用したAIアプリケーション開発の要件定義方法をまとめたものです。Cursorでの開発効率を最大化するため、具体的な実装例と設計パターンを含めています。
+# Mastraフレームワーク開発要件定義ガイド
+
+## 📖 概要
+
+このガイドは、mastraフレームワークを使用したAIアプリケーション開発の要件定義方法をまとめたものです。Cursorでの開発効率を最大化するため、具体的な実装例と設計パターンを含めています。
+
+## 🎯 mastraフレームワークとは
+
+Mastraは、TypeScript製のオープンソースAIエージェントフレームワークです。以下の主要機能を提供します：
+
+- **Agent（エージェント）**: メモリとツール実行能力を持つAIエージェント
+- **Workflow（ワークフロー）**: 決定論的なLLM呼び出しチェーン
+- **Tool（ツール）**: 外部システムとの連携機能
+- **Memory（メモリ）**: 会話履歴と状態の永続化
+- **RAG**: 文書処理とベクトル検索
+- **Evals**: 自動評価とテスト
+
+## 🏗️ プロジェクト構造設計パターン
+
+### 推奨ディレクトリ構造
+
+```
+src/
+├── mastra/
+│   ├── agents/          # エージェント定義
+│   ├── tools/           # ツール・外部連携
+│   ├── workflows/       # ワークフロー定義
+│   ├── types/           # 型定義
+│   ├── config/          # 設定管理
+│   ├── utils/           # ユーティリティ
+│   └── index.ts         # Mastraインスタンス
+└── server/              # API・Webhookサーバー
+```
+
+### 基本的なMastraインスタンス設定
+
+```typescript
+// src/mastra/index.ts
+import { Mastra } from "@mastra/core";
+import { PinoLogger } from "@mastra/loggers";
+import { LibSQLStore } from "@mastra/libsql";
+import { agents } from "./agents";
+import { workflows } from "./workflows";
+
+export const mastra = new Mastra({
+  agents,
+  workflows,
+  storage: new LibSQLStore({
+    url: process.env.NODE_ENV === "production" 
+      ? "file:../mastra.db" 
+      : ":memory:",
+  }),
+  logger: new PinoLogger({
+    name: "Mastra",
+    level: process.env.LOG_LEVEL || "info",
+  }),
+});
+```
+
+## 🤖 エージェント設計パターン
+
+### 基本エージェント設計
+
+```typescript
+// src/mastra/agents/data-analysis-agent.ts
+import { Agent } from "@mastra/core/agent";
+import { openai } from "@ai-sdk/openai";
+import { Memory } from "@mastra/memory";
+import { analysisTools } from "../tools/analysis";
+
+export const dataAnalysisAgent = new Agent({
+  name: "DataAnalysisAgent",
+  description: "データを分析し、洞察を提供するエージェント",
+  instructions: `
+    あなたはデータ分析の専門家です。
+    データを受け取り、以下の観点で分析してください：
+    
+    1. データの品質と完全性
+    2. パターンと傾向の特定
+    3. 異常値の検出
+    4. 実用的な洞察の提供
+    
+    必ず構造化された形式で回答してください。
+  `,
+  model: openai("gpt-4o"),
+  tools: analysisTools,
+  memory: new Memory({
+    storage: new LibSQLStore({
+      url: "file:../memory.db",
+    }),
+  }),
+});
+```
+
+### 動的エージェント設計（ランタイムコンテキスト対応）
+
+```typescript
+// src/mastra/agents/dynamic-content-agent.ts
+import { Agent } from "@mastra/core/agent";
+import { RuntimeContext } from "@mastra/core/di";
+
+type ContentRuntimeContext = {
+  "content-type": string;
+  "target-audience": string;
+  "complexity-level": "beginner" | "intermediate" | "advanced";
+};
+
+export const contentGenerationAgent = new Agent({
+  name: "ContentGenerationAgent",
+  instructions: ({ runtimeContext }) => {
+    const complexity = runtimeContext.get("complexity-level");
+    const audience = runtimeContext.get("target-audience");
+    
+    return `
+      あなたはコンテンツ制作の専門家です。
+      対象読者: ${audience}
+      複雑さレベル: ${complexity}
+      
+      ${complexity === "beginner" 
+        ? "分かりやすく基本的な説明を心がけてください。"
+        : complexity === "advanced"
+        ? "高度な技術的詳細を含めて説明してください。"
+        : "適度な技術的詳細で説明してください。"
+      }
+    `;
+  },
+  model: ({ runtimeContext }) => {
+    const complexity = runtimeContext.get("complexity-level");
+    return complexity === "advanced" ? openai("gpt-4o") : openai("gpt-4o-mini");
+  },
+  tools: ({ runtimeContext }) => {
+    const baseTools = [contentBasicTools];
+    const complexity = runtimeContext.get("complexity-level");
+    
+    if (complexity === "advanced") {
+      baseTools.push(contentAdvancedTools);
+    }
+    
+    return baseTools;
+  },
+});
+```
+
+## 🔧 ツール設計パターン
+
+### 外部API連携ツール
+
+```typescript
+// src/mastra/tools/api-tools.ts
+import { createTool } from "@mastra/core/tools";
+import { z } from "zod";
+
+export const fetchExternalData = createTool({
+  id: "fetch-external-data",
+  description: "外部APIからデータを取得します",
+  inputSchema: z.object({
+    endpoint: z.string().describe("APIエンドポイント"),
+    params: z.record(z.any()).optional().describe("クエリパラメータ"),
+  }),
+  outputSchema: z.object({
+    data: z.any(),
+    status: z.number(),
+    headers: z.record(z.string()),
+  }),
+  execute: async ({ context, runtimeContext }) => {
+    const apiKey = runtimeContext.get("api-key");
+    const { endpoint, params } = context;
+    
+    // URL構築
+    const url = new URL(endpoint);
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        url.searchParams.append(key, String(value));
+      });
+    }
+    
+    const response = await fetch(url.toString(), {
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return {
+      data,
+      status: response.status,
+      headers: Object.fromEntries(response.headers.entries()),
+    };
+  },
+});
+```
+
+### ファイル処理ツール
+
+```typescript
+// src/mastra/tools/file-tools.ts
+import { createTool } from "@mastra/core/tools";
+import { z } from "zod";
+import { readFile, writeFile } from "fs/promises";
+
+export const processTextFile = createTool({
+  id: "process-text-file",
+  description: "テキストファイルを読み込み、処理します",
+  inputSchema: z.object({
+    filePath: z.string().describe("ファイルパス"),
+  }),
+  outputSchema: z.object({
+    processedContent: z.string(),
+  }),
+  execute: async ({ context }) => {
+    const filePath = context.filePath;
+    const fileContent = await readFile(filePath, "utf-8");
+    const processedContent = processContent(fileContent);
+    return { processedContent };
+  },
+});
+
+function processContent(content: string): string {
+  // 実装省略：テキスト処理ロジック
+  return content;
+}
+```
+
+## 🔄 ワークフロー設計パターン
+
+### データ処理ワークフロー
+
+```typescript
+// src/mastra/workflows/data-processing.ts
+import { createWorkflow, createStep } from "@mastra/core/workflows";
+import { z } from "zod";
+
+// スキーマ定義
+const dataInputSchema = z.object({
+  source: z.string(),
+  format: z.enum(["json", "csv", "xml"]),
+  filters: z.record(z.any()).optional(),
+});
+
+const processedOutputSchema = z.object({
+  processedData: z.array(z.record(z.any())),
+  summary: z.object({
+    totalRecords: z.number(),
+    validRecords: z.number(),
+    errors: z.array(z.string()),
+  }),
+  insights: z.array(z.string()),
+});
+
+// ステップ定義
+const validateDataStep = createStep({
+  id: "validate-data",
+  description: "データの妥当性を検証",
+  inputSchema: dataInputSchema,
+  outputSchema: z.object({
+    validatedData: z.array(z.record(z.any())),
+    validationErrors: z.array(z.string()),
+  }),
+  execute: async ({ inputData, mastra }) => {
+    const agent = mastra.getAgent("dataValidationAgent");
+    const result = await agent.generate(
+      `以下のデータを検証してください：${inputData.source}`
+    );
+    
+    return {
+      validatedData: [], // 実際の検証ロジック
+      validationErrors: [],
+    };
+  },
+});
+
+const processDataStep = createStep({
+  id: "process-data",
+  description: "データを処理・変換",
+  inputSchema: z.object({
+    validatedData: z.array(z.record(z.any())),
+    validationErrors: z.array(z.string()),
+  }),
+  outputSchema: z.object({
+    processedData: z.array(z.record(z.any())),
+    processingMetrics: z.record(z.number()),
+  }),
+  execute: async ({ inputData, mastra }) => {
+    const agent = mastra.getAgent("dataProcessingAgent");
+    
+    const result = await agent.generate(
+      `データを処理してください：${JSON.stringify(inputData.validatedData)}`
+    );
+    
+    return {
+      processedData: inputData.validatedData, // 簡略化
+      processingMetrics: { recordsProcessed: inputData.validatedData.length },
+    };
+  },
+});
+
+const generateInsightsStep = createStep({
+  id: "generate-insights",
+  description: "データから洞察を生成",
+  inputSchema: z.object({
+    processedData: z.array(z.record(z.any())),
+    processingMetrics: z.record(z.number()),
+  }),
+  outputSchema: processedOutputSchema,
+  execute: async ({ inputData, mastra }) => {
+    const agent = mastra.getAgent("insightGenerationAgent");
+    
+    const result = await agent.generate(
+      `処理されたデータから洞察を生成してください：${JSON.stringify(inputData.processedData)}`,
+      {
+        output: z.object({ insights: z.array(z.string()) }),
+      }
+    );
+    
+    return {
+      processedData: inputData.processedData,
+      summary: {
+        totalRecords: inputData.processedData.length,
+        validRecords: inputData.processedData.length,
+        errors: [],
+      },
+      insights: result.object?.insights || [],
+    };
+  },
+});
+
+// ワークフロー定義
+export const dataProcessingWorkflow = createWorkflow({
+  id: "data-processing-workflow",
+  description: "データの検証・処理・洞察生成を行う",
+  inputSchema: dataInputSchema,
+  outputSchema: processedOutputSchema,
+  steps: [validateDataStep, processDataStep, generateInsightsStep],
+})
+  .then(validateDataStep)
+  .then(processDataStep)
+  .then(generateInsightsStep)
+  .commit();
+```
+
+### 条件分岐を含むワークフロー
+
+```typescript
+// src/mastra/workflows/conditional-content.ts
+export const conditionalContentWorkflow = createWorkflow({
+  id: "conditional-content-workflow",
+  inputSchema: z.object({
+    contentType: z.enum(["article", "tutorial", "documentation"]),
+    targetAudience: z.enum(["beginner", "advanced"]),
+  }),
+  outputSchema: z.object({
+    generatedContent: z.string(),
+    metadata: z.record(z.any()),
+  }),
+})
+  .then(analyzeContentRequirements)
+  .branch([
+    // 記事コンテンツの場合
+    [
+      async ({ inputData }) => inputData.contentType === "article",
+      generateArticleContent,
+    ],
+    // チュートリアルの場合
+    [
+      async ({ inputData }) => inputData.contentType === "tutorial",
+      generateTutorialContent,
+    ],
+    // ドキュメンテーションの場合
+    [
+      async ({ inputData }) => inputData.contentType === "documentation",
+      generateDocumentationContent,
+    ],
+  ])
+  .then(finalizeContent)
+  .commit();
+```
+
+## 📝 型定義パターン
+
+### 共通データモデルの型
+
+```typescript
+// src/mastra/types/common.ts
+import { z } from "zod";
+
+// 基本エンティティ型
+export const BaseEntitySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  status: z.enum(["active", "inactive", "archived"]),
+  tags: z.array(z.string()),
+  metadata: z.record(z.any()).optional(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type Requirement = z.infer<typeof RequirementSchema>;
+
+// Slack要望型
+export const SlackRequestSchema = z.object({
+  messageId: z.string(),
+  channel: z.string(),
+  userId: z.string(),
+  content: z.string(),
+  timestamp: z.string(),
+  thread: z.string().optional(),
+});
+
+export type SlackRequest = z.infer<typeof SlackRequestSchema>;
+
+// GitLab分析結果型
+export const GitLabAnalysisSchema = z.object({
+  projectId: z.string(),
+  languages: z.record(z.number()),
+  structure: z.object({
+    directories: z.array(z.string()),
+    mainFiles: z.array(z.string()),
+    configFiles: z.array(z.string()),
+  }),
+  dependencies: z.array(z.string()),
+  complexity: z.enum(["low", "medium", "high"]),
+  maintainability: z.number().min(0).max(100),
+});
+
+export type GitLabAnalysis = z.infer<typeof GitLabAnalysisSchema>;
+```
+
+### ランタイムコンテキスト型
+
+```typescript
+// src/mastra/types/runtime-context.ts
+export type RequirementAutomationRuntimeContext = {
+  "slack-token": string;
+  "gitlab-token": string;
+  "project-id": string;
+  "user-id": string;
+  "analysis-depth": "shallow" | "deep";
+  "output-format": "json" | "markdown" | "pdf";
+  "language": "ja" | "en";
+};
+```
+
+## 🧪 テスト設計パターン
+
+### エージェントテスト
+
+```typescript
+// tests/agents/requirement-agent.test.ts
+import { describe, it, expect, beforeEach } from "@jest/globals";
+import { RuntimeContext } from "@mastra/core/di";
+import { requirementAgent } from "../../src/mastra/agents/requirement-agent";
+
+describe("RequirementAgent", () => {
+  let runtimeContext: RuntimeContext<RequirementAutomationRuntimeContext>;
+
+  beforeEach(() => {
+    runtimeContext = new RuntimeContext();
+    runtimeContext.set("language", "ja");
+    runtimeContext.set("output-format", "json");
+  });
+
+  it("should generate functional requirements from Slack message", async () => {
+    const message = "ユーザー登録機能を追加したい。メール認証も必要。";
+    
+    const result = await requirementAgent.generate(message, {
+      runtimeContext,
+      output: RequirementSchema,
+    });
+
+    expect(result.object).toBeDefined();
+    expect(result.object?.type).toBe("functional");
+    expect(result.object?.description).toContain("ユーザー登録");
+  });
+});
+```
+
+### ワークフローテスト
+
+```typescript
+// tests/workflows/data-processing.test.ts
+import { describe, it, expect } from "@jest/globals";
+import { mastra } from "../../src/mastra";
+
+describe("DataProcessingWorkflow", () => {
+  it("should complete full data processing flow", async () => {
+    const workflow = mastra.getWorkflow("data-processing-workflow");
+    const run = workflow.createRun();
+
+    const result = await run.start({
+      inputData: {
+        source: "test-data.json",
+        format: "json",
+        filters: { status: "active" },
+      },
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.result?.processedData).toBeDefined();
+    expect(result.result?.insights.length).toBeGreaterThan(0);
+  });
+});
+```
+
+## 🔒 セキュリティとエラーハンドリング
+
+### 環境変数管理
+
+```typescript
+// src/mastra/config/environment.ts
+import { z } from "zod";
+
+const EnvironmentSchema = z.object({
+  OPENAI_API_KEY: z.string(),
+  API_TOKEN: z.string().optional(),
+  EXTERNAL_API_KEY: z.string().optional(),
+  DATABASE_URL: z.string(),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+});
+
+export const env = EnvironmentSchema.parse(process.env);
+```
+
+### エラーハンドリング
+
+```typescript
+// src/mastra/utils/error-handling.ts
+export class MastraApplicationError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+    public readonly context?: Record<string, any>
+  ) {
+    super(message);
+    this.name = "MastraApplicationError";
+  }
+}
+
+export const handleToolError = (error: unknown, toolId: string) => {
+  if (error instanceof MastraApplicationError) {
+    console.error(`Tool ${toolId} failed:`, {
+      code: error.code,
+      message: error.message,
+      context: error.context,
+    });
+    throw error;
+  }
+  
+  throw new MastraApplicationError(
+    `Unexpected error in tool ${toolId}`,
+    "TOOL_EXECUTION_ERROR",
+    { originalError: error }
+  );
+};
+```
+
+## 📊 ロギングと監視
+
+### 構造化ログ
+
+```typescript
+// src/mastra/utils/logging.ts
+import { PinoLogger } from "@mastra/loggers";
+
+export const logger = new PinoLogger({
+  name: "MastraApplication",
+  level: process.env.LOG_LEVEL || "info",
+  formatters: {
+    level: (label) => ({ level: label }),
+    log: (object) => ({
+      ...object,
+      timestamp: new Date().toISOString(),
+      service: "mastra-app",
+    }),
+  },
+});
+
+export const logWorkflowStep = (
+  stepId: string,
+  status: "start" | "success" | "error",
+  metadata?: Record<string, any>
+) => {
+  logger.info("workflow_step", {
+    stepId,
+    status,
+    metadata,
+  });
+};
+```
+
+## 🚀 デプロイメント設計
+
+### サーバー設定
+
+```typescript
+// src/mastra/index.ts (サーバー設定付き)
+export const mastra = new Mastra({
+  // ... その他の設定
+  server: {
+    host: "0.0.0.0",
+    port: 4111,
+    middleware: [
+      // CORS設定
+      async (c, next) => {
+        c.header("Access-Control-Allow-Origin", "*");
+        c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
+        await next();
+      },
+      // 認証ミドルウェア
+      async (c, next) => {
+        const authHeader = c.req.header("Authorization");
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
+          return c.json({ error: "Unauthorized" }, 401);
+        }
+        await next();
+      },
+    ],
+    apiRoutes: [
+      {
+        path: "/api/data/process",
+        method: "POST",
+        createHandler: async ({ mastra }) => (c) => {
+          const body = await c.req.json();
+          const workflow = mastra.getWorkflow("data-processing-workflow");
+          const result = await workflow.createRun().start({ inputData: body });
+          return c.json(result);
+        },
+      },
+    ],
+  },
+});
+```
+
+## 📋 チェックリスト
+
+### 開発前チェックリスト
+
+- [ ] 必要な依存関係がインストールされている
+- [ ] 環境変数が正しく設定されている  
+- [ ] 外部API・サービスの認証情報が取得済み
+- [ ] データベースが設定されている
+- [ ] ログレベルが適切に設定されている
+
+### 実装チェックリスト
+
+- [ ] エージェントの指示文が明確で具体的
+- [ ] ツールのスキーマが型安全に定義されている
+- [ ] ワークフローのステップが論理的に配置されている
+- [ ] エラーハンドリングが適切に実装されている
+- [ ] テストケースが網羅的に書かれている
+
+### デプロイ前チェックリスト
+
+- [ ] 本番環境用の環境変数が設定済み
+- [ ] データベースマイグレーションが完了
+- [ ] ログ監視が設定済み
+- [ ] セキュリティ設定が適切
+- [ ] パフォーマンステストが完了
+
+## 📚 参考リンク
+
+- [Mastra公式ドキュメント](mdc:https:/mastra.ai/docs)
+- [エージェント設計ガイド](mdc:https:/mastra.ai/docs/agents/overview)
+- [ワークフロー設計ガイド](mdc:https:/mastra.ai/docs/workflows/overview)
+- [ツール作成ガイド](mdc:https:/mastra.ai/docs/tools-mcp/overview)
+
+---
+
+このガイドを参考に、効率的で保守性の高いMastraアプリケーションを開発してください。 
