@@ -1,0 +1,458 @@
+---
+description: フェーズ1の開発
+globs: 
+alwaysApply: false
+---
+# 第一フェーズ実装進行管理ルール
+
+## 📋 概要
+
+第一フェーズの実装を着実に進めるための詳細な進行管理ルールです。各タスクの開始から完了まで、品質とエビデンスを確保しながら効率的に進めます。
+
+## 🎯 基本原則
+
+### MUST（必須）
+- **段階的実装**: 一つのタスクを完全に完了してから次に進む
+- **品質ファースト**: 動作するコードより、正しく動作するコードを優先
+- **エビデンス記録**: すべての実装と動作確認のエビデンスを記録
+- **テスト駆動**: 実装前にテスト設計、実装後にテスト実行
+- **ドキュメント同期**: コード変更時の関連ドキュメント更新
+
+### SHOULD（推奨）
+- **小さなコミット**: 論理的な単位でのコミット分割
+- **早期フィードバック**: 中間成果物の早期レビュー
+- **パフォーマンス意識**: 実装時のパフォーマンス考慮
+- **セキュリティ配慮**: セキュリティ観点での実装レビュー
+
+## 🚀 タスク実行フロー
+
+### 1. タスク開始前チェックリスト
+
+```markdown
+#### 開始前確認事項
+- [ ] 依存タスクが完了している
+- [ ] 必要な環境設定が完了している
+- [ ] 関連ドキュメントを確認済み
+- [ ] 実装方針が明確になっている
+- [ ] テスト戦略が設計されている
+
+#### 環境準備
+- [ ] 開発環境が正常に動作する
+- [ ] 必要なAPIキー・認証情報が設定済み
+- [ ] データベースが接続可能
+- [ ] 外部サービスとの疎通確認済み
+```
+
+### 2. 実装フェーズ
+
+#### 2.1 設計・実装
+```typescript
+/**
+ * 実装時の必須要件
+ */
+
+// 1. TypeScript厳格モードでの実装
+// tsconfig.json の strict: true は必須
+
+// 2. 型安全性の確保
+interface StrictTyping {
+  // any型の使用禁止（特別な理由がある場合は明記）
+  noAnyType: boolean;
+  // 適切な型定義の実装
+  properTypeDefinition: boolean;
+  // null/undefined安全性
+  nullabilityHandling: boolean;
+}
+
+// 3. エラーハンドリングの実装
+class ProperErrorHandling {
+  async executeWithHandling<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      // 適切なエラーログ記録
+      this.logger.error('Operation failed', { error, context: 'specific-context' });
+      // 呼び出し元に適切なエラー情報を提供
+      throw new ApplicationError('Operation failed', 'OPERATION_ERROR', { originalError: error });
+    }
+  }
+}
+
+// 4. TSDocコメントの必須記述
+/**
+ * すべての公開API・クラス・複雑な関数にTSDocコメント必須
+ * 
+ * @param input - 入力パラメータの説明
+ * @returns 戻り値の説明
+ * @throws エラー条件の説明
+ * @example 実用的な使用例
+ */
+```
+
+#### 2.2 実装品質チェック
+```bash
+# 実装完了時の必須チェックコマンド
+npm run lint          # ESLint実行
+npm run type-check    # TypeScript型チェック
+npm run test          # 単体テスト実行
+npm run test:integration  # 統合テスト実行
+```
+
+### 3. テストフェーズ
+
+#### 3.1 テスト戦略
+```typescript
+// 単体テストの例
+describe('WorkflowRepository', () => {
+  let repository: WorkflowRepository;
+  let mockDb: jest.Mocked<Database>;
+
+  beforeEach(() => {
+    mockDb = createMockDatabase();
+    repository = new WorkflowRepository(mockDb);
+  });
+
+  it('should create workflow record successfully', async () => {
+    // Given
+    const workflowData = createTestWorkflowData();
+    mockDb.insert.mockResolvedValue({ id: 'test-id' });
+
+    // When
+    const result = await repository.create(workflowData);
+
+    // Then
+    expect(result.id).toBe('test-id');
+    expect(mockDb.insert).toHaveBeenCalledWith(workflowData);
+  });
+
+  it('should handle database errors gracefully', async () => {
+    // Given
+    const workflowData = createTestWorkflowData();
+    mockDb.insert.mockRejectedValue(new Error('Database error'));
+
+    // When & Then
+    await expect(repository.create(workflowData))
+      .rejects.toThrow(ApplicationError);
+  });
+});
+```
+
+#### 3.2 統合テストの実装
+```typescript
+// 統合テストの例
+describe('Google Chat Webhook Integration', () => {
+  let app: Application;
+  let testDb: TestDatabase;
+
+  beforeAll(async () => {
+    testDb = await createTestDatabase();
+    app = createTestApplication(testDb);
+  });
+
+  afterAll(async () => {
+    await testDb.cleanup();
+  });
+
+  it('should process webhook message end-to-end', async () => {
+    // Given
+    const webhookPayload = createGoogleChatWebhookPayload();
+
+    // When
+    const response = await request(app)
+      .post('/api/webhook/google-chat')
+      .send(webhookPayload)
+      .expect(200);
+
+    // Then
+    expect(response.body.status).toBe('success');
+    
+    // データベース状態の確認
+    const workflow = await testDb.workflows.findByThreadId(webhookPayload.message.thread.name);
+    expect(workflow.status).toBe('defining');
+  });
+});
+```
+
+### 4. エビデンス収集
+
+#### 4.1 必須エビデンス項目
+```markdown
+### 実装エビデンス
+- [ ] コード実装の完了（GitHubコミットリンク）
+- [ ] 単体テスト実行結果（スクリーンショット）
+- [ ] 統合テスト実行結果（スクリーンショット）
+- [ ] 型チェック・Lint実行結果（スクリーンショット）
+- [ ] 機能動作確認（動画またはスクリーンショット）
+
+### 品質エビデンス
+- [ ] コードカバレッジレポート
+- [ ] パフォーマンス測定結果
+- [ ] セキュリティチェック結果
+- [ ] エラーハンドリングテスト結果
+
+### ドキュメントエビデンス
+- [ ] TSDocコメントの完全性確認
+- [ ] README・設計書の更新
+- [ ] API仕様書の更新（該当する場合）
+```
+
+#### 4.2 エビデンス記録方法
+```bash
+# テスト実行結果の記録
+npm test -- --coverage --verbose > test-results.log 2>&1
+
+# スクリーンショット取得（macOS）
+screencapture -i ~/Documents/evidence/task-1-1-1-test-results.png
+
+# パフォーマンス測定
+npm run test:performance > performance-results.log 2>&1
+```
+
+## 📊 進捗管理
+
+### タスク状態管理
+```typescript
+// タスク状態の定義
+type TaskStatus = 
+  | 'not-started'    // ⭕ 未着手
+  | 'in-progress'    // 🟡 進行中
+  | 'testing'        // 🔵 テスト中
+  | 'completed'      // ✅ 完了
+  | 'blocked'        // ❌ 問題発生
+  | 'on-hold';       // ⏸️ 保留
+
+interface TaskProgress {
+  id: string;
+  name: string;
+  status: TaskStatus;
+  startDate?: Date;
+  completedDate?: Date;
+  evidence: EvidenceItem[];
+  blockers: BlockerItem[];
+  estimatedHours: number;
+  actualHours?: number;
+}
+```
+
+### 日次進捗レポート
+```markdown
+# 日次進捗レポート - YYYY/MM/DD
+
+## 完了したタスク
+- [ ] タスク1.1.1: プロジェクト初期設定とデータベース設計
+  - 実装時間: 3時間
+  - 課題: データベース接続設定で小さな問題があったが解決済み
+  - エビデンス: [スクリーンショット](mdc:evidence/task-1-1-1-completion.png)
+
+## 進行中のタスク
+- [ ] タスク1.1.2: Google Chat Webhook エンドポイント実装
+  - 進捗: 70%
+  - 次の作業: バリデーション機能の実装
+  - 予定完了: 明日の午前中
+
+## 発生した問題
+- Google Chat API の認証周りで予期しない仕様があった
+- 対応策: 公式ドキュメントを再確認し、認証フローを修正
+
+## 明日の予定
+- タスク1.1.2の完了
+- タスク1.2.1の開始準備
+```
+
+## 🔧 品質保証
+
+### コード品質チェックリスト
+```markdown
+#### TypeScript品質
+- [ ] 厳格モード（strict: true）でエラーなし
+- [ ] any型を使用していない（使用時は理由を明記）
+- [ ] 適切な型定義が実装されている
+- [ ] null/undefined安全性が確保されている
+
+#### コード構造
+- [ ] 単一責任の原則に従っている
+- [ ] 適切な関数・クラス分割ができている
+- [ ] ハードコーディングを避けている
+- [ ] 設定値は環境変数で管理している
+
+#### エラーハンドリング
+- [ ] 適切なtry-catch構文を使用している
+- [ ] エラーメッセージが有意義である
+- [ ] ログ出力が適切に実装されている
+- [ ] 上位層に適切なエラー情報を提供している
+
+#### テスト品質
+- [ ] 単体テストカバレッジが80%以上
+- [ ] エッジケースのテストが含まれている
+- [ ] 統合テストが実装されている
+- [ ] テストが独立して実行可能
+```
+
+### セキュリティチェックリスト
+```markdown
+#### 認証・認可
+- [ ] APIキーが環境変数で管理されている
+- [ ] 機密情報がコードにハードコーディングされていない
+- [ ] 適切な認証機能が実装されている
+
+#### 入力検証
+- [ ] 外部入力の検証が実装されている
+- [ ] SQLインジェクション対策が実装されている
+- [ ] XSS対策が実装されている（Web部分）
+
+#### ログ・監査
+- [ ] 機密情報がログに出力されていない
+- [ ] 適切なログレベルが設定されている
+- [ ] 重要な操作のログが記録されている
+```
+
+## 📝 ドキュメント管理
+
+### 必須ドキュメント更新
+```markdown
+#### 実装時の必須更新
+- [ ] README.md の更新（新機能の追加時）
+- [ ] API仕様書の更新（エンドポイント追加時）
+- [ ] 設定ファイルの説明更新（環境変数追加時）
+- [ ] トラブルシューティングガイドの更新
+
+#### TSDocコメント
+- [ ] すべての公開API・クラスにコメント
+- [ ] 複雑な内部関数にコメント
+- [ ] 使用例（@example）の記述
+- [ ] エラー条件（@throws）の記述
+```
+
+### ドキュメント品質チェック
+```bash
+# TSDocの品質チェック
+npx typedoc --out docs-temp --dry-run src/
+
+# Markdownリンクチェック
+npx markdown-link-check docs/**/*.md
+
+# スペルチェック
+npx cspell "docs/**/*.md" "src/**/*.ts"
+```
+
+## 🚨 問題対応
+
+### 問題発生時の対応フロー
+```markdown
+1. **問題の記録**
+   - 問題の詳細な説明
+   - 発生時刻・状況
+   - エラーメッセージ・ログ
+   - 影響範囲の特定
+
+2. **初期対応**
+   - 緊急度の評価（高・中・低）
+   - 一時的な回避策の検討
+   - 関係者への連絡（必要に応じて）
+
+3. **根本原因分析**
+   - 問題の根本原因特定
+   - 再発防止策の検討
+   - 修正方針の決定
+
+4. **修正・検証**
+   - 修正の実装
+   - 修正内容のテスト
+   - 影響範囲の確認
+
+5. **事後対応**
+   - 修正内容のドキュメント化
+   - 再発防止策の実装
+   - 振り返りと改善点の抽出
+```
+
+### 一般的な問題と対処法
+```markdown
+#### API連携の問題
+- **認証エラー**: 認証情報の確認、トークンの有効期限チェック
+- **レート制限**: リクエスト間隔の調整、バックオフ戦略の実装
+- **接続エラー**: ネットワーク状況の確認、タイムアウト設定の調整
+
+#### データベースの問題
+- **接続エラー**: 接続文字列の確認、データベースサーバーの状態確認
+- **パフォーマンス問題**: インデックスの確認、クエリの最適化
+- **データ整合性**: トランザクション処理の確認、制約の見直し
+
+#### テストの問題
+- **テスト失敗**: テストデータの確認、モックの設定確認
+- **テスト不安定**: 非同期処理の適切な待機、テスト独立性の確保
+- **カバレッジ不足**: 未テストコードの特定、テストケースの追加
+```
+
+## 📈 継続的改善
+
+### 完了後の振り返り項目
+```markdown
+#### 技術的振り返り
+- [ ] 実装で学んだ技術的知見
+- [ ] 遭遇した問題と解決策
+- [ ] より良い実装方法の検討
+- [ ] パフォーマンス改善の余地
+
+#### プロセス振り返り
+- [ ] 見積もり精度の評価
+- [ ] 作業効率の評価
+- [ ] コミュニケーションの改善点
+- [ ] ツール・環境の改善点
+
+#### 次フェーズへの申し送り
+- [ ] 技術的負債の整理
+- [ ] 改善すべき設計の特定
+- [ ] 再利用可能コンポーネントの整理
+- [ ] ドキュメントの改善点
+```
+
+## 🎯 成功基準
+
+### 各タスクの成功基準
+```markdown
+#### 実装成功基準
+- [ ] すべてのテストがパスしている
+- [ ] 型チェック・Lintエラーがない
+- [ ] 要件定義された機能が動作する
+- [ ] エラーハンドリングが適切に動作する
+- [ ] パフォーマンス要件を満たしている
+
+#### 品質成功基準
+- [ ] コードカバレッジが目標値以上
+- [ ] セキュリティチェックリストを満たしている
+- [ ] TSDocコメントが完全に記述されている
+- [ ] ドキュメントが最新状態に更新されている
+
+#### プロセス成功基準
+- [ ] 見積もり時間内で完了している
+- [ ] 完全なエビデンスが記録されている
+- [ ] 問題発生時の対応が適切に行われている
+- [ ] 次タスクの依存関係が明確になっている
+```
+
+---
+
+## 📚 関連リソース
+
+### 開発ツール
+- **TypeScript**: 厳格モードでの開発
+- **Jest**: 単体・統合テスト
+- **ESLint**: コード品質チェック
+- **Prettier**: コードフォーマット
+- **typedoc**: ドキュメント生成
+
+### 外部サービス
+- **Google Chat API**: Webhook・メッセージ送信
+- **Claude API**: 要件定義生成
+- **GitLab API**: MR作成・管理
+- **データベース**: LibSQL（開発環境）
+
+### 参考ドキュメント
+- [第一フェーズ実装計画書](mdc:../docs/phase1-implementation-plan.md)
+- [Mastra開発要件定義ガイド](mdc:mastra-requirements-guide.mdc)
+- [品質保証チェックリスト](mdc:../docs/quality-checklist.md)
+
+---
+
+**重要**: このルールは第一フェーズの全タスクで必ず遵守してください。品質とエビデンスを確保しながら、着実に実装を進めることが成功の鍵です。

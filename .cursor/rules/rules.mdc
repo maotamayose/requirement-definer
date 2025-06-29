@@ -241,5 +241,34 @@ npx tsdoc-linter src/**/*.ts
 4. ドキュメント同期・更新
 5. テスト作成・実行
 
+## 🎯 フェーズ1実装管理（AI自動適用）
+
+### フェーズ1専用ルール（AI必須参照）
+- **実装ガイド**: [phase1-implementation-guide.mdc](mdc:phase1-implementation-guide.mdc)
+- **品質基準**: [phase1-quality-standards.mdc](mdc:phase1-quality-standards.mdc)
+- **進捗管理**: [phase1-progress-management.mdc](mdc:phase1-progress-management.mdc)
+- **開発ルール**: [phase1-development-rules.mdc](mdc:phase1-development-rules.mdc)
+
+### AIタスク管理責任
+```typescript
+// AI実行必須項目
+interface AIPhase1Responsibilities {
+  taskValidation: boolean;     // タスク開始前の依存関係チェック
+  qualityGate: boolean;        // 品質基準の自動チェック
+  progressTracking: boolean;   // 進捗の自動更新
+  riskDetection: boolean;      // リスク・ブロッカーの早期発見
+  evidenceCollection: boolean; // エビデンスの自動収集
+  reportGeneration: boolean;   // 日次・週次レポート生成
+}
+
+// フェーズ1完了まで必須適用
+const phase1Rules = {
+  enforceQualityGates: true,
+  blockProgressOnFailure: true,
+  autoGenerateReports: true,
+  escalateBlockers: true
+};
+```
+
 ---
-**重要**: このルールは全ての開発タスクで必ず遵守すること 
+**重要**: このルールは全ての開発タスクで必ず遵守すること。フェーズ1期間中は追加ルールが自動適用される。 

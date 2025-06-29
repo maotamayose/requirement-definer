@@ -10,24 +10,21 @@
 
 #### 📝 基本情報
 - **ファイル名**: `src/mastra/tools/requirements-tool.ts`
-- **ツールID**: `read-requirements`
+- **ツールID**: `readRequirements`
 - **目的**: 要件定義書ファイルの読み込みと解析
 
 #### 🔧 技術仕様
 ```typescript
 export const requirementsReaderTool = createTool({
-  id: "read-requirements",
-  description: "要件定義書ファイルを読み込み、内容を解析します",
+  id: "readRequirements",
+  description: "既存の要件定義書を読み込みます。ファイルパスを指定して内容を取得できます。",
   inputSchema: z.object({
     filePath: z.string().describe("要件定義書のファイルパス"),
   }),
   outputSchema: z.object({
     content: z.string().describe("ファイルの内容"),
-    metadata: z.object({
-      fileSize: z.number(),
-      lastModified: z.string(),
-      encoding: z.string(),
-    }),
+    exists: z.boolean().describe("ファイルの存在確認"),
+    message: z.string().describe("処理結果メッセージ"),
   }),
   execute: async ({ context }) => {
     // 実装詳細
@@ -48,23 +45,20 @@ export const requirementsReaderTool = createTool({
 ```typescript
 {
   content: string,     // ファイルの全内容
-  metadata: {
-    fileSize: number,    // ファイルサイズ（バイト）
-    lastModified: string, // 最終更新日時（ISO形式）
-    encoding: string     // 文字エンコーディング
-  }
+  exists: boolean,     // ファイルの存在確認
+  message: string,     // 処理結果メッセージ
 }
 ```
 
 #### 🚀 使用例
 ```typescript
 // エージェント内での使用
-const result = await context.useTool("read-requirements", {
+const result = await context.useTool("readRequirements", {
   filePath: "./REQUIREMENT/current-requirements.md"
 });
 
 console.log("要件定義書の内容:", result.content);
-console.log("ファイルサイズ:", result.metadata.fileSize);
+console.log("ファイル存在:", result.exists);
 ```
 
 #### 🔍 対応ファイル形式
@@ -73,9 +67,9 @@ console.log("ファイルサイズ:", result.metadata.fileSize);
 - **その他**: UTF-8エンコーディングのテキストファイル
 
 #### ⚠️ 制限事項
-- ファイルサイズ上限: 10MB
 - 対応エンコーディング: UTF-8のみ
 - バイナリファイルは非対応
+- 相対パスはプロジェクトルートから
 
 ---
 
@@ -83,43 +77,39 @@ console.log("ファイルサイズ:", result.metadata.fileSize);
 
 #### 📝 基本情報
 - **ファイル名**: `src/mastra/tools/codebase-analysis-tool.ts`
-- **ツールID**: `analyze-codebase`
+- **ツールID**: `analyzeCodebase`
 - **目的**: プロジェクト構造とコードベースの包括的分析
 
 #### 🔧 技術仕様
 ```typescript
 export const codebaseAnalysisTool = createTool({
-  id: "analyze-codebase",
-  description: "プロジェクトの構造とコードベースを分析します",
+  id: "analyzeCodebase",
+  description: "ローカルのコードベースを探索・分析し、プロジェクト構造や技術スタックを特定します",
   inputSchema: z.object({
-    projectPath: z.string().describe("プロジェクトのルートパス"),
-    includeNodeModules: z.boolean().optional().default(false),
-    maxDepth: z.number().optional().default(5),
+    projectPath: z.string().describe("分析対象のプロジェクトパス"),
+    maxDepth: z.number().default(5).describe("ディレクトリの探索深度"),
+    excludePatterns: z.array(z.string()).default([
+      'node_modules', '.git', 'dist', 'build', '.next', 'coverage', '.nyc_output'
+    ]).describe("除外するディレクトリ/ファイルパターン"),
+    includeExtensions: z.array(z.string()).default([
+      '.ts', '.tsx', '.js', '.jsx', '.py', '.java', '.go', '.rs',
+      '.md', '.json', '.yaml', '.yml', '.toml', '.xml'
+    ]).describe("分析対象のファイル拡張子"),
   }),
   outputSchema: z.object({
-    structure: z.object({
-      directories: z.array(z.string()),
-      files: z.array(z.string()),
+    projectStructure: z.object({
       totalFiles: z.number(),
       totalDirectories: z.number(),
+      sourceFiles: z.array(FileInfoSchema),
+      configFiles: z.array(FileInfoSchema),
+      documentFiles: z.array(FileInfoSchema),
     }),
     techStack: z.object({
-      languages: z.record(z.number()),
+      languages: z.array(z.string()),
       frameworks: z.array(z.string()),
-      databases: z.array(z.string()),
-      tools: z.array(z.string()),
+      dependencies: z.array(z.string()),
     }),
-    dependencies: z.object({
-      production: z.array(z.string()),
-      development: z.array(z.string()),
-      total: z.number(),
-    }),
-    fileTypes: z.record(z.number()),
-    complexity: z.object({
-      score: z.number().min(1).max(10),
-      level: z.enum(['low', 'medium', 'high']),
-      factors: z.array(z.string()),
-    }),
+    summary: z.string(),
   }),
   execute: async ({ context }) => {
     // 実装詳細
@@ -133,51 +123,41 @@ export const codebaseAnalysisTool = createTool({
 ```typescript
 {
   projectPath: string,           // プロジェクトルートパス
-  includeNodeModules?: boolean,  // node_modulesを含むか（デフォルト: false）
-  maxDepth?: number             // 探索する最大階層（デフォルト: 5）
+  maxDepth?: number,            // 探索する最大階層（デフォルト: 5）
+  excludePatterns?: string[],   // 除外パターン
+  includeExtensions?: string[]  // 対象ファイル拡張子
 }
 ```
 
 **出力データ**:
 ```typescript
 {
-  structure: {
-    directories: string[],      // ディレクトリ一覧
-    files: string[],           // ファイル一覧
-    totalFiles: number,        // 総ファイル数
-    totalDirectories: number   // 総ディレクトリ数
+  projectStructure: {
+    totalFiles: number,           // 総ファイル数
+    totalDirectories: number,     // 総ディレクトリ数
+    sourceFiles: FileInfo[],      // ソースファイル一覧
+    configFiles: FileInfo[],      // 設定ファイル一覧
+    documentFiles: FileInfo[],    // ドキュメントファイル一覧
   },
   techStack: {
-    languages: Record<string, number>,  // 言語別ファイル数
-    frameworks: string[],               // 検出されたフレームワーク
-    databases: string[],               // データベース関連技術
-    tools: string[]                    // 開発ツール
+    languages: string[],          // 検出された言語
+    frameworks: string[],         // 検出されたフレームワーク
+    dependencies: string[],       // 依存関係一覧
   },
-  dependencies: {
-    production: string[],      // 本番依存関係
-    development: string[],     // 開発依存関係
-    total: number             // 総依存関係数
-  },
-  fileTypes: Record<string, number>,  // 拡張子別ファイル数
-  complexity: {
-    score: number,            // 複雑度スコア（1-10）
-    level: 'low' | 'medium' | 'high',  // 複雑度レベル
-    factors: string[]         // 複雑度に影響する要因
-  }
+  summary: string                 // 分析結果のサマリー
 }
 ```
 
 #### 🚀 使用例
 ```typescript
 // エージェント内での使用
-const analysis = await context.useTool("analyze-codebase", {
+const analysis = await context.useTool("analyzeCodebase", {
   projectPath: "./",
-  includeNodeModules: false,
   maxDepth: 3
 });
 
 console.log("技術スタック:", analysis.techStack);
-console.log("複雑度:", analysis.complexity);
+console.log("プロジェクト構造:", analysis.projectStructure);
 ```
 
 #### 🔍 分析対象
@@ -186,159 +166,96 @@ console.log("複雑度:", analysis.complexity);
 - **ソースコード**: `.ts`, `.js`, `.tsx`, `.jsx`, `.py`, `.java`, `.go`, etc.
 - **設定ファイル**: `package.json`, `tsconfig.json`, `.env`, etc.
 - **ドキュメント**: `.md`, `.txt`, `.rst`
-- **スタイル**: `.css`, `.scss`, `.less`
 
 **検出技術**:
 - **フレームワーク**: React, Vue, Angular, Express, Next.js, etc.
-- **データベース**: MongoDB, PostgreSQL, MySQL, Redis, etc.
 - **ツール**: Webpack, Vite, ESLint, Prettier, etc.
+- **言語**: TypeScript, JavaScript, Python, Java, Go, etc.
 
-#### 📈 複雑度算出ロジック
+#### 📈 分析ロジック
 
 **評価要因**:
-1. **ファイル数**: 総ファイル数
-2. **ディレクトリ階層**: 最大階層の深さ
-3. **依存関係数**: package.jsonの依存関係数
-4. **言語多様性**: 使用言語の種類数
-5. **設定ファイル数**: 設定ファイルの複雑さ
-
-**スコア計算**:
-```typescript
-const complexityScore = Math.min(10, Math.max(1, 
-  (fileCount / 100) * 2 +
-  (maxDepth / 5) * 2 +
-  (dependencyCount / 50) * 2 +
-  (languageCount / 3) * 2 +
-  (configComplexity / 10) * 2
-));
-```
+1. **ファイル分類**: ソースコード、設定、ドキュメントの分類
+2. **技術検出**: package.jsonや設定ファイルからの技術スタック検出
+3. **依存関係**: 依存パッケージの分析
+4. **プロジェクト構造**: ディレクトリ構造とファイル配置の分析
 
 #### ⚠️ 制限事項
-- 最大分析ファイル数: 10,000ファイル
-- 最大探索階層: 10階層
-- タイムアウト: 60秒
-- メモリ使用量上限: 500MB
+- 探索深度上限: 10階層
+- 対象ファイル数上限: 10,000ファイル
+- バイナリファイルは除外
+- シンボリックリンクは追跡しない
 
 ---
 
-## 🔄 ツール連携パターン
+## 🔧 共通仕様
 
-### パターン1: 要件分析 → コードベース分析
+### エラーハンドリング
+
+**共通エラー形式**:
 ```typescript
-// 1. 既存要件定義書を読み込み
-const requirements = await context.useTool("read-requirements", {
-  filePath: "./REQUIREMENT/current.md"
-});
-
-// 2. コードベースを分析
-const codebase = await context.useTool("analyze-codebase", {
-  projectPath: "./"
-});
-
-// 3. 両方の情報を統合して判断
-const analysis = `
-既存要件: ${requirements.content}
-技術スタック: ${JSON.stringify(codebase.techStack)}
-複雑度: ${codebase.complexity.level}
-`;
-```
-
-### パターン2: 段階的分析
-```typescript
-// 1. 高レベル分析
-const overview = await context.useTool("analyze-codebase", {
-  projectPath: "./",
-  maxDepth: 2
-});
-
-// 2. 詳細分析（必要に応じて）
-if (overview.complexity.level === 'high') {
-  const detailed = await context.useTool("analyze-codebase", {
-    projectPath: "./src",
-    maxDepth: 5
-  });
+{
+  success: false,
+  error: {
+    code: string,
+    message: string,
+    details?: any
+  }
 }
 ```
 
-## 🧪 テスト仕様
+**エラーコード一覧**:
+- `FILE_NOT_FOUND`: ファイルが見つからない
+- `ACCESS_DENIED`: ファイルアクセス権限がない
+- `INVALID_PATH`: 無効なパス指定
+- `PARSING_ERROR`: ファイル解析エラー
+- `SYSTEM_ERROR`: システムレベルのエラー
 
-### requirementsReaderTool テスト
-```typescript
-describe('requirementsReaderTool', () => {
-  it('should read markdown file correctly', async () => {
-    const result = await requirementsReaderTool.execute({
-      context: { filePath: './test/sample.md' }
-    });
-    
-    expect(result.content).toContain('# Sample Requirements');
-    expect(result.metadata.fileSize).toBeGreaterThan(0);
-  });
+### パフォーマンス
 
-  it('should handle non-existent file', async () => {
-    await expect(requirementsReaderTool.execute({
-      context: { filePath: './non-existent.md' }
-    })).rejects.toThrow('File not found');
-  });
-});
+**実行時間目安**:
+- `readRequirements`: 100-500ms
+- `analyzeCodebase`: 1-10秒（プロジェクトサイズによる）
+
+**メモリ使用量**:
+- `readRequirements`: ~10MB
+- `analyzeCodebase`: ~50-200MB
+
+### ログ出力
+
+**ログレベル**:
+- `DEBUG`: 詳細な実行情報
+- `INFO`: 通常の処理情報
+- `WARN`: 警告（処理は継続）
+- `ERROR`: エラー（処理停止）
+
+## 🧪 テスト
+
+### 単体テスト
+
+**テストファイル**:
+- `tests/tools/requirements-tool.test.ts`
+- `tests/tools/codebase-analysis-tool.test.ts`
+
+**実行方法**:
+```bash
+npm test -- --testPathPattern=tools
 ```
 
-### codebaseAnalysisTool テスト
-```typescript
-describe('codebaseAnalysisTool', () => {
-  it('should analyze project structure', async () => {
-    const result = await codebaseAnalysisTool.execute({
-      context: { projectPath: './test-project' }
-    });
-    
-    expect(result.structure.totalFiles).toBeGreaterThan(0);
-    expect(result.techStack.languages).toBeDefined();
-    expect(result.complexity.score).toBeBetween(1, 10);
-  });
-});
-```
+### 統合テスト
 
-## 📊 パフォーマンス指標
+**テストシナリオ**:
+1. 実際のプロジェクトファイルを使った分析
+2. エージェントとツールの連携動作
+3. エラーケースの検証
 
-### requirementsReaderTool
-- **小ファイル** (< 1KB): ~10ms
-- **中ファイル** (1KB-100KB): ~50ms
-- **大ファイル** (100KB-1MB): ~200ms
-- **超大ファイル** (1MB-10MB): ~1000ms
+## 📚 関連資料
 
-### codebaseAnalysisTool
-- **小プロジェクト** (< 100ファイル): ~500ms
-- **中プロジェクト** (100-1000ファイル): ~2000ms
-- **大プロジェクト** (1000-5000ファイル): ~10000ms
-- **超大プロジェクト** (5000+ファイル): ~30000ms
-
-## 🔒 セキュリティ考慮事項
-
-### ファイルアクセス制限
-- プロジェクトディレクトリ外へのアクセス禁止
-- シンボリックリンクの追跡制限
-- 機密ファイルの除外（`.env`, `.secret`, etc.）
-
-### データ保護
-- 読み込んだファイル内容の一時保存のみ
-- 機密情報の自動マスキング
-- ログ出力時の個人情報除外
-
-## 🔄 更新履歴
-
-### v1.0.0 (2024年12月)
-- 初回リリース
-- requirementsReaderTool実装
-- codebaseAnalysisTool実装
-- 基本的なエラーハンドリング
-
-### 今後の予定
-- [ ] バイナリファイル対応
-- [ ] Git履歴分析機能
-- [ ] コード品質メトリクス
-- [ ] セキュリティ脆弱性検出
+- [Mastra Core Tools Documentation](https://mastra.ai/docs/tools)
+- [エージェント設計ガイド](./agents-overview.md)
+- [テスト戦略ドキュメント](./testing-strategy.md)
 
 ---
 
 **最終更新**: 2024年12月  
-**担当者**: 開発チーム  
-**レビュー**: 未実施 
+**バージョン**: 2.0.0（実装統一版） 

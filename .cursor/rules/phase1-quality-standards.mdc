@@ -1,0 +1,272 @@
+---
+description: フェーズ1の開発
+globs: 
+alwaysApply: false
+---
+# フェーズ1品質基準（AIルール）
+
+## 📋 概要
+AIが自動実行する品質チェック基準。各タスク完了時の必須検証項目と合格基準を定義。
+
+## 🔍 自動品質チェック（AI実行必須）
+
+### TypeScript品質チェック
+```bash
+# AI実行コマンド
+npm run type-check    # TypeScript型チェック
+npm run lint         # ESLint実行
+npm run format:check # Prettier確認
+```
+
+**合格基準**:
+- [ ] TypeScript厳格モード: エラー0件
+- [ ] ESLint: 警告0件  
+- [ ] 型定義: `any`型使用禁止（理由明記時のみ例外）
+- [ ] null安全性: 適切な`null`/`undefined`処理
+
+**AI自動チェック項目**:
+```typescript
+// 禁止パターン（AI検出対象）
+const badCode: any = getData(); // ❌ any型使用
+function process(data) { } // ❌ 型注釈なし
+if (data.prop) { } // ❌ null安全性なし
+
+// 推奨パターン（AI推奨）
+const goodCode: UserData = getData(); // ✅ 適切な型
+function process(data: ProcessData): ProcessResult { } // ✅ 型注釈
+if (data?.prop) { } // ✅ null安全性
+```
+
+### テスト品質チェック
+```bash
+# AI実行コマンド
+npm test -- --coverage      # カバレッジ付きテスト
+npm run test:integration    # 統合テスト
+npm run test:e2e           # E2Eテスト
+```
+
+**必須品質基準**:
+- [ ] 単体テストカバレッジ: 80%以上
+- [ ] 統合テストカバレッジ: 主要フロー100%
+- [ ] テスト実行時間: 全体5分以内
+- [ ] テスト独立性: 他テストに依存しない
+
+**AI評価基準**:
+```typescript
+// テスト品質の評価項目
+interface TestQuality {
+  coverage: number;          // 80%以上必須
+  testCount: number;         // 関数数の1.5倍推奨
+  assertionCount: number;    // テスト1つあたり2-5個推奨
+  mockUsage: boolean;        // 外部依存の適切なモック化
+  edgeCases: boolean;        // 境界値テストの実装
+}
+```
+
+### セキュリティ品質チェック
+```bash
+# AI実行コマンド
+npm audit                  # 脆弱性チェック
+npm run security-scan      # セキュリティスキャン
+```
+
+**必須セキュリティ基準**:
+- [ ] 脆弱性: High/Critical 0件
+- [ ] APIキー: 環境変数管理100%
+- [ ] 入力検証: 外部入力の検証100%
+- [ ] ログセキュリティ: 機密情報出力禁止
+
+**AI検出パターン**:
+```typescript
+// 危険パターン（AI検出・警告）
+const apiKey = "sk-1234567890"; // ❌ ハードコーディング
+app.post('/api', (req, res) => {
+  const data = req.body; // ❌ 入力検証なし
+  console.log('User data:', data); // ❌ 機密情報ログ出力
+});
+
+// 安全パターン（AI推奨）
+const apiKey = process.env.API_KEY; // ✅ 環境変数
+app.post('/api', validate(schema), (req, res) => { // ✅ 入力検証
+  logger.info('Request processed', { requestId }); // ✅ 安全なログ
+});
+```
+
+## 📊 パフォーマンス品質チェック
+
+### 応答時間基準
+```bash
+# AI実行コマンド
+npm run test:performance   # パフォーマンステスト
+npm run benchmark         # ベンチマーク測定
+```
+
+**必須パフォーマンス基準**:
+- [ ] API応答時間: 3秒以内（必須）/ 1秒以内（推奨）
+- [ ] データベースクエリ: 500ms以内
+- [ ] メモリ使用量: 100MB以内（開発環境）
+- [ ] CPU使用率: 80%以下
+
+**AI監視項目**:
+```typescript
+// パフォーマンス監視ポイント
+interface PerformanceMetrics {
+  apiResponseTime: number;    // ms単位
+  dbQueryTime: number;        // ms単位
+  memoryUsage: number;        // MB単位
+  cpuUsage: number;          // %単位
+  concurrentUsers: number;    // 同時接続数
+}
+```
+
+## 📚 ドキュメント品質チェック
+
+### TSDoc品質基準
+```bash
+# AI実行コマンド
+npx typedoc --dry-run src/  # TSDoc検証
+npm run doc-check           # ドキュメント品質チェック
+```
+
+**必須ドキュメント基準**:
+- [ ] 公開API: TSDocコメント100%
+- [ ] 複雑な関数: 説明コメント100%
+- [ ] 型定義: 用途説明100%
+- [ ] 例外処理: エラー条件記載100%
+
+**AI品質評価**:
+```typescript
+/**
+ * ✅ 良いTSDocの例（AI推奨）
+ * ユーザーデータを検証し、正規化する
+ * 
+ * 入力されたユーザーデータの形式チェック、必須フィールド検証、
+ * セキュリティ上の問題がないかを確認し、正規化して返す。
+ * 
+ * @param userData - 検証対象のユーザーデータ
+ * @param options - 検証オプション（strict: 厳密モード）
+ * @returns 正規化されたユーザーデータ
+ * @throws ValidationError 必須フィールド不足時
+ * @throws SecurityError 不正な入力値検出時
+ * 
+ * @example
+ * ```typescript
+ * const user = validateUser({ name: "田中", email: "tanaka@example.com" });
+ * ```
+ */
+```
+
+## 🎯 AI品質チェック実行フロー
+
+### タスク開始時（AI自動実行）
+1. **環境チェック**: 開発環境の正常性確認
+2. **依存関係チェック**: 必要パッケージのインストール確認
+3. **設定チェック**: TypeScript/ESLint設定の確認
+4. **ベースライン測定**: 品質メトリクスの初期値記録
+
+### 実装中（AI継続監視）
+1. **リアルタイム品質チェック**: 保存時の自動lint/type-check
+2. **テスト実行**: 関連テストの自動実行
+3. **セキュリティスキャン**: コミット前の脆弱性チェック
+4. **パフォーマンス監視**: 重い処理の検出と最適化提案
+
+### 完了時（AI最終検証）
+1. **総合品質チェック**: 全基準の一括確認
+2. **回帰テスト**: 既存機能への影響確認
+3. **エビデンス収集**: テスト結果・メトリクスの記録
+4. **品質レポート**: 品質チェック結果の自動生成
+
+## 📈 品質メトリクス（AI自動測定）
+
+### 必須メトリクス
+```typescript
+interface QualityMetrics {
+  // コード品質
+  typeScriptErrors: number;      // 0件必須
+  eslintWarnings: number;        // 0件必須
+  testCoverage: number;          // 80%以上必須
+  
+  // セキュリティ
+  vulnerabilities: {
+    high: number;                // 0件必須
+    medium: number;              // 0件推奨
+    low: number;                 // 監視対象
+  };
+  
+  // パフォーマンス
+  avgResponseTime: number;       // 3000ms以下必須
+  maxMemoryUsage: number;        // 100MB以下推奨
+  
+  // ドキュメント
+  tsdocCoverage: number;         // 100%必須（公開API）
+  missingDocs: string[];         // 未文書化項目リスト
+}
+```
+
+### 品質トレンド（AI分析）
+- **品質向上トレンド**: 継続的な品質改善の確認
+- **技術的負債**: 蓄積する問題の早期発見
+- **パフォーマンス劣化**: 性能低下の兆候検出
+- **セキュリティリスク**: 新たな脆弱性の監視
+
+## 🚨 品質ゲート（AI判定）
+
+### 合格条件（すべて満たす必要あり）
+```typescript
+const qualityGate = {
+  // 必須条件（1つでも失敗で不合格）
+  mandatory: {
+    typeScriptErrors: 0,
+    eslintWarnings: 0,
+    testCoverage: 80,
+    criticalVulnerabilities: 0,
+    apiResponseTime: 3000,
+    tsdocCoverage: 100
+  },
+  
+  // 推奨条件（3つ以上満たす必要）
+  recommended: {
+    testCoverage: 90,
+    apiResponseTime: 1000,
+    cyclomaticComplexity: 10,
+    codeduplication: 5,
+    mediumVulnerabilities: 0
+  }
+};
+```
+
+### 不合格時のAI対応
+1. **即座に実装停止**: 次のタスクに進まない
+2. **問題の特定**: 失敗した品質基準の詳細分析
+3. **修正方針の提示**: 具体的な改善案の提案
+4. **修正支援**: コード修正の具体的な支援
+5. **再検証**: 修正後の品質チェック再実行
+
+## 📝 品質レポート自動生成
+
+### AIが生成する品質レポート
+```markdown
+# 品質チェック結果 - タスク1.1.1
+
+## ✅ 合格項目
+- TypeScript厳格モード: ✅ エラー0件
+- テストカバレッジ: ✅ 85%
+- セキュリティ: ✅ 脆弱性0件
+- API応答時間: ✅ 平均1.2秒
+
+## ⚠️ 改善推奨項目
+- サイクロマティック複雑度: 12（推奨: 10以下）
+- コード重複: 7%（推奨: 5%以下）
+
+## 📊 品質トレンド
+- 前回比テストカバレッジ: +5%
+- 前回比応答時間: -200ms改善
+
+## 🎯 次回改善目標
+- 複雑な関数の分割
+- 重複コードのリファクタリング
+```
+
+---
+
+**AI品質管理責任**: このルールに基づいて品質チェックを自動実行し、基準を満たさない場合は実装を停止して改善を促す。品質ファーストの開発を徹底する。

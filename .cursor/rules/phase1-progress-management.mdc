@@ -1,0 +1,401 @@
+---
+description: フェーズ1の開発
+globs: 
+alwaysApply: false
+---
+# フェーズ1進捗管理（AIルール）
+
+## 📋 概要
+AIが自動実行する進捗管理システム。タスクの進捗追跡、リスク検出、レポート生成を自動化。
+
+## 📊 進捗状態管理（AI自動更新）
+
+### タスク状態定義
+```typescript
+type TaskStatus = 
+  | 'not-started'    // ⭕ 未着手
+  | 'in-progress'    // 🟡 進行中
+  | 'testing'        // 🔵 テスト中
+  | 'completed'      // ✅ 完了
+  | 'blocked'        // ❌ 問題発生
+  | 'on-hold';       // ⏸️ 保留
+
+interface TaskProgress {
+  id: string;
+  name: string;
+  status: TaskStatus;
+  progress: number;        // 0-100%
+  startDate?: Date;
+  completedDate?: Date;
+  estimatedHours: number;
+  actualHours?: number;
+  blockers: BlockerItem[];
+  dependencies: string[];
+  evidence: EvidenceItem[];
+}
+```
+
+### AI自動進捗更新条件
+```typescript
+// AI進捗判定ルール
+const progressRules = {
+  'not-started': {
+    condition: () => false,
+    nextStatus: 'in-progress'
+  },
+  'in-progress': {
+    condition: (task) => task.actualHours > 0,
+    progressCalc: (task) => Math.min((task.actualHours / task.estimatedHours) * 80, 80),
+    nextStatus: 'testing'
+  },
+  'testing': {
+    condition: (task) => task.evidence.length > 0 && task.testsPass,
+    progressCalc: () => 90,
+    nextStatus: 'completed'
+  },
+  'completed': {
+    condition: (task) => task.qualityGatePassed,
+    progressCalc: () => 100
+  }
+};
+```
+
+## 🔄 日次進捗管理（AI自動実行）
+
+### 日次チェック項目
+```typescript
+interface DailyCheck {
+  timestamp: Date;
+  tasksCompleted: TaskProgress[];
+  tasksInProgress: TaskProgress[];
+  tasksBlocked: TaskProgress[];
+  newBlockers: BlockerItem[];
+  resolvedBlockers: BlockerItem[];
+  qualityMetrics: QualityMetrics;
+  timeSpent: number;
+  velocityTrend: number;
+}
+```
+
+### AI日次レポート生成
+```markdown
+# AI自動生成: 日次進捗レポート - {DATE}
+
+## 📈 今日の成果
+### ✅ 完了したタスク ({COMPLETED_COUNT}件)
+{COMPLETED_TASKS_LIST}
+
+### 🔵 進行中のタスク ({IN_PROGRESS_COUNT}件)
+{IN_PROGRESS_TASKS_LIST}
+
+## 🚨 検出された問題・リスク
+{DETECTED_ISSUES}
+
+## 📊 品質メトリクス
+- テストカバレッジ: {COVERAGE}%
+- 品質ゲート: {QUALITY_GATE_STATUS}
+- 技術的負債: {TECH_DEBT_COUNT}件
+
+## 🎯 明日の推奨アクション
+{RECOMMENDED_ACTIONS}
+
+## 📈 進捗サマリー
+- 全体進捗: {OVERALL_PROGRESS}%
+- 予定との乖離: {SCHEDULE_VARIANCE}日
+- ベロシティ: {VELOCITY}ポイント/日
+```
+
+## 🚨 リスク検出・アラート（AI自動監視）
+
+### 自動リスク検出条件
+```typescript
+interface RiskDetection {
+  // スケジュールリスク
+  scheduleDelay: {
+    condition: (task) => task.actualHours > task.estimatedHours * 1.2,
+    severity: 'medium',
+    action: 'escalate_to_manager'
+  };
+  
+  // 品質リスク  
+  qualityDegradation: {
+    condition: (metrics) => metrics.testCoverage < 80,
+    severity: 'high',
+    action: 'block_progress'
+  };
+  
+  // 技術リスク
+  techDebt: {
+    condition: (metrics) => metrics.complexity > 10,
+    severity: 'medium',
+    action: 'suggest_refactoring'
+  };
+  
+  // ブロッカー長期化
+  longBlocker: {
+    condition: (blocker) => blocker.duration > 24, // 24時間
+    severity: 'high',
+    action: 'escalate_immediately'
+  };
+}
+```
+
+### AI自動アラート生成
+```typescript
+// 緊急アラート（即座に通知）
+interface CriticalAlert {
+  type: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  message: string;
+  taskId: string;
+  detectedAt: Date;
+  suggestedActions: string[];
+  escalationRequired: boolean;
+}
+
+// AI判定による自動アラート例
+const alerts = [
+  {
+    type: 'HIGH',
+    message: 'タスク1.1.2が24時間以上ブロック状態です',
+    taskId: '1.1.2',
+    suggestedActions: [
+      'Google Chat API認証の代替方法を検討',
+      '技術サポートへの問い合わせ',
+      'タスクの一時的なスキップを検討'
+    ],
+    escalationRequired: true
+  }
+];
+```
+
+## 📈 ベロシティ管理（AI分析）
+
+### ベロシティ計算
+```typescript
+interface VelocityMetrics {
+  dailyVelocity: number;        // 1日あたりの完了ポイント
+  weeklyVelocity: number;       // 1週間あたりの完了ポイント
+  efficiency: number;           // 見積もり精度（実績/見積もり）
+  qualityVelocity: number;      // 品質考慮後のベロシティ
+  trendAnalysis: 'improving' | 'stable' | 'declining';
+}
+
+// AI自動計算
+const calculateVelocity = (completedTasks: TaskProgress[]) => {
+  const totalPoints = completedTasks.reduce((sum, task) => sum + task.estimatedHours, 0);
+  const totalDays = calculateWorkingDays(completedTasks);
+  return totalPoints / totalDays;
+};
+```
+
+### ベロシティ予測とスケジュール調整
+```typescript
+// AI予測モデル
+interface SchedulePrediction {
+  currentVelocity: number;
+  predictedCompletion: Date;
+  confidenceLevel: number;     // 0-100%
+  riskFactors: string[];
+  adjustmentRecommendations: string[];
+}
+
+// 自動スケジュール調整提案
+const generateScheduleAdjustment = (prediction: SchedulePrediction) => {
+  if (prediction.confidenceLevel < 70) {
+    return [
+      'リソース追加の検討',
+      'スコープの見直し',
+      'タスクの並列化',
+      '技術的負債の優先対応'
+    ];
+  }
+};
+```
+
+## 🎯 マイルストーン管理（AI監視）
+
+### フェーズ進捗監視
+```typescript
+interface PhaseProgress {
+  phaseId: string;
+  phaseName: string;
+  totalTasks: number;
+  completedTasks: number;
+  progressPercentage: number;
+  onTrack: boolean;
+  estimatedCompletion: Date;
+  actualCompletion?: Date;
+  criticalPath: string[];      // クリティカルパス上のタスク
+  risks: RiskItem[];
+}
+
+// AI自動進捗計算
+const calculatePhaseProgress = (phase: Phase) => {
+  const completed = phase.tasks.filter(t => t.status === 'completed').length;
+  const total = phase.tasks.length;
+  const progress = (completed / total) * 100;
+  
+  return {
+    progressPercentage: progress,
+    onTrack: progress >= getExpectedProgress(phase.startDate, phase.endDate),
+    estimatedCompletion: predictCompletion(phase.tasks)
+  };
+};
+```
+
+### クリティカルパス分析
+```typescript
+// AI自動クリティカルパス分析
+interface CriticalPathAnalysis {
+  criticalTasks: string[];
+  totalDuration: number;
+  bottlenecks: string[];
+  optimizationOpportunities: string[];
+  riskMitigation: string[];
+}
+
+// 遅延リスクの自動検出
+const detectDelayRisk = (criticalPath: TaskProgress[]) => {
+  return criticalPath
+    .filter(task => task.actualHours > task.estimatedHours)
+    .map(task => ({
+      taskId: task.id,
+      delayHours: task.actualHours - task.estimatedHours,
+      impact: calculateDownstreamImpact(task)
+    }));
+};
+```
+
+## 📝 週次振り返り（AI支援）
+
+### 自動振り返りデータ収集
+```typescript
+interface WeeklyRetrospective {
+  weekPeriod: { start: Date; end: Date };
+  completedTasks: TaskProgress[];
+  qualityMetrics: QualityMetrics[];
+  timeEfficiency: number;
+  issuesEncountered: IssueItem[];
+  lessonsLearned: string[];
+  improvementActions: string[];
+  nextWeekFocus: string[];
+}
+```
+
+### AI生成振り返りレポート
+```markdown
+# AI自動生成: 週次振り返り - {WEEK_PERIOD}
+
+## 📊 今週の成果
+- 完了タスク: {COMPLETED_TASKS}件
+- 時間効率: {TIME_EFFICIENCY}%
+- 品質スコア: {QUALITY_SCORE}/100
+
+## ✅ 成功要因分析
+{SUCCESS_FACTORS}
+
+## 🚨 課題・改善点
+{IMPROVEMENT_AREAS}
+
+## 📚 学習・知見
+{LESSONS_LEARNED}
+
+## 🎯 来週のフォーカス
+{NEXT_WEEK_FOCUS}
+
+## 📈 トレンド分析
+{TREND_ANALYSIS}
+```
+
+## 🔧 エビデンス管理（AI自動収集）
+
+### 自動エビデンス収集
+```typescript
+interface EvidenceCollection {
+  taskId: string;
+  evidenceType: 'screenshot' | 'log' | 'test_result' | 'performance_metric';
+  filePath: string;
+  timestamp: Date;
+  description: string;
+  qualityCheck: boolean;
+}
+
+// AI自動エビデンス収集トリガー
+const autoEvidenceCollection = {
+  onTestPass: (testResults) => collectTestEvidence(testResults),
+  onQualityGatePass: (metrics) => collectQualityEvidence(metrics),
+  onTaskComplete: (task) => collectCompletionEvidence(task),
+  onPerformanceTest: (results) => collectPerformanceEvidence(results)
+};
+```
+
+### エビデンス品質チェック
+```typescript
+// AI自動エビデンス品質検証
+interface EvidenceQuality {
+  completeness: number;        // 0-100%
+  relevance: number;          // 0-100%
+  clarity: number;            // 0-100%
+  traceability: boolean;      // タスク要件との紐付け
+  retention: boolean;         // 適切な保存期間
+}
+
+const validateEvidence = (evidence: EvidenceCollection[]) => {
+  return evidence.map(e => ({
+    ...e,
+    quality: assessEvidenceQuality(e),
+    recommendations: generateImprovementSuggestions(e)
+  }));
+};
+```
+
+## 📊 ダッシュボード（AI自動更新）
+
+### リアルタイム進捗ダッシュボード
+```typescript
+interface ProgressDashboard {
+  overallProgress: number;
+  phaseProgress: PhaseProgress[];
+  currentVelocity: number;
+  qualityTrend: 'improving' | 'stable' | 'declining';
+  riskLevel: 'low' | 'medium' | 'high';
+  upcomingDeadlines: DeadlineItem[];
+  recentAchievements: AchievementItem[];
+  activeBlockers: BlockerItem[];
+}
+```
+
+### AI推奨アクション
+```typescript
+// ダッシュボード表示用AI推奨アクション
+interface RecommendedActions {
+  immediate: string[];         // 今すぐ実行すべき
+  shortTerm: string[];        // 今週中に実行
+  longTerm: string[];         // 来週以降に検討
+  preventive: string[];       // 予防的措置
+}
+
+// AI自動生成の推奨アクション例
+const generateRecommendations = (dashboard: ProgressDashboard) => {
+  const recommendations: RecommendedActions = {
+    immediate: [],
+    shortTerm: [],
+    longTerm: [],
+    preventive: []
+  };
+  
+  if (dashboard.riskLevel === 'high') {
+    recommendations.immediate.push('ブロッカーの緊急対応');
+  }
+  
+  if (dashboard.qualityTrend === 'declining') {
+    recommendations.shortTerm.push('品質改善施策の実施');
+  }
+  
+  return recommendations;
+};
+```
+
+---
+
+**AI進捗管理責任**: このルールに基づいて進捗を自動追跡し、リスクを早期発見してアラートを発出する。データドリブンな意思決定を支援し、プロジェクト成功を保証する。
